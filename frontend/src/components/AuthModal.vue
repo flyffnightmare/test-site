@@ -80,7 +80,7 @@ export default {
         password: '',
         captcha: ''
       },
-      captcha: 'ABC123', // В реальном приложении генерируется на бэкенде
+      captcha: 'ABC123',
       loading: false
     }
   },
@@ -94,9 +94,13 @@ export default {
         
         if (response.data.success) {
           if (this.mode === 'login') {
+            // Сохраняем токен и данные пользователя
             localStorage.setItem('token', response.data.data.token)
+            localStorage.setItem('user', JSON.stringify(response.data.data.user))
+            
+            // Отправляем событие об успешном логине
+            this.$emit('login-success', response.data.data.user)
             this.$emit('close')
-            location.reload() // Обновляем для отображения изменений
           } else {
             this.$emit('switch-to-login')
             alert('Регистрация успешна! Теперь вы можете войти.')

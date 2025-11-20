@@ -5,7 +5,7 @@
         <div class="footer-logo-section">
           <div class="footer-logo">
             <img :src="logoUrl" alt="Game Company Logo" class="logo-img">
-            <span class="logo-text">GameStudio</span>
+            <span class="logo-text">SibWinterCraft</span>
           </div>
           <p class="company-description">
             Создаем незабываемые игровые впечатления. Присоединяйтесь к нашему сообществу!
@@ -45,7 +45,7 @@
       
       <div class="footer-bottom">
         <div class="footer-copy">
-          <p>&copy; 2024 GameStudio. Все права защищены.</p>
+          <p>&copy; 2025 SibWinterCraft. Все права защищены.</p>
           <p>Все товарные знаки являются собственностью их правообладателей.</p>
         </div>
         <div class="footer-legal">

@@ -1,6 +1,10 @@
 <template>
   <div id="app">
-    <Header @open-login="showLoginModal = true" @open-register="showRegisterModal = true" />
+    <Header 
+      @open-login="showLoginModal = true" 
+      @open-register="showRegisterModal = true" 
+      ref="header"
+    />
     <main>
       <router-view />
     </main>
@@ -11,6 +15,7 @@
       mode="login" 
       @close="showLoginModal = false"
       @switch-to-register="showLoginModal = false; showRegisterModal = true"
+      @login-success="onLoginSuccess"
     />
     
     <AuthModal 
@@ -38,6 +43,12 @@ export default {
     return {
       showLoginModal: false,
       showRegisterModal: false
+    }
+  },
+  methods: {
+    onLoginSuccess(user) {
+      // Обновляем данные пользователя в Header компоненте
+      this.$refs.header.user = user
     }
   }
 }

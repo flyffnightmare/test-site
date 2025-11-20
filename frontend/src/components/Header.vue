@@ -5,7 +5,7 @@
         <div class="nav-left">
           <div class="logo">
             <img :src="logoUrl" alt="Game Company Logo" class="logo-img">
-            <span class="logo-text">GameStudio</span>
+            <span class="logo-text">SibWinterCraft</span>
           </div>
         </div>
         
@@ -44,13 +44,19 @@ export default {
     logout() {
       this.user = null
       localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      // Обновляем страницу для применения изменений
+      location.reload()
+    },
+    loadUser() {
+      const userData = localStorage.getItem('user')
+      if (userData) {
+        this.user = JSON.parse(userData)
+      }
     }
   },
   mounted() {
-    const token = localStorage.getItem('token')
-    if (token) {
-      this.user = { username: 'User' }
-    }
+    this.loadUser()
   }
 }
 </script>
