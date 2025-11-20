@@ -21,6 +21,7 @@ pub struct Game {
     pub image_url: String,
     pub screenshots: Vec<String>,
     pub genre: String,
+    pub platform: String,  // Добавлено новое поле
     pub steam_url: Option<String>,
     pub release_date: Option<String>,
     pub developer: String,
@@ -60,5 +61,16 @@ pub struct ApiResponse<T> {
     pub success: bool,
     pub data: Option<T>,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GameListItem {
+    pub id: Uuid,
+    pub title: String,
+    pub short_description: String,
+    pub image_url: String,
+    pub genre: String,
+    pub platform: String,  // Добавлено для списка
+    pub created_at: DateTime<Utc>,
 }
 

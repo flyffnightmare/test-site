@@ -7,13 +7,14 @@
       </div>
       
       <div class="games-grid">
-        <div v-for="game in games" :key="game.id" class="game-card">
+        <div class="game-card" v-for="game in games" :key="game.id">
           <div class="game-image-container">
             <img :src="game.image_url" :alt="game.title" class="game-image">
             <div class="game-genre-tag">{{ game.genre }}</div>
           </div>
           <div class="game-info">
             <h3>{{ game.title }}</h3>
+            <p class="game-platform">{{ game.platform }}</p>
             <p class="game-description">{{ game.short_description }}</p>
             <div class="game-actions">
               <router-link :to="`/games/${game.id}`" class="btn btn-primary">
@@ -51,6 +52,13 @@ export default {
 </script>
 
 <style scoped>
+.game-platform {
+  color: #00aeff;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
 .games {
   padding: 3rem 0;
   background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
