@@ -2,7 +2,7 @@
   <div class="home">
     <HeroCarousel :images="carouselImages" :interval="15000">
       <div class="hero-content-inner">
-        <h1>Добро пожаловать в СибВинтерКрафт</h1>
+        <h1>Добро пожаловать в SibWinterCraft</h1>
         <p class="hero-subtitle">Создаем лучшие игровые впечатления в сибирском стиле</p>
         <button class="btn btn-primary hero-btn" @click="$router.push('/games')">
           Смотреть игры

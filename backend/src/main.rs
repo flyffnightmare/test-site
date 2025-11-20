@@ -53,6 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .route("/api/register", web::post().to(handlers::register))
             .route("/api/login", web::post().to(handlers::login))
             .route("/api/games", web::get().to(handlers::get_games))
+            .route("/api/games/{id}", web::get().to(handlers::get_game))
             .route(
                 "/api/health",
                 web::get().to(|| async { "✅ Сервер работает нормально" }),

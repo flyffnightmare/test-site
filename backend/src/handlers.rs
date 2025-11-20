@@ -1,7 +1,8 @@
-use crate::auth::*;
-use crate::models::*;
 use actix_web::{web, HttpResponse};
 use sqlx::{PgPool, Row};
+use uuid::Uuid;
+use crate::models::*;
+use crate::auth::*;
 
 pub async fn register(
     pool: web::Data<PgPool>,
@@ -156,7 +157,7 @@ pub async fn login(pool: web::Data<PgPool>, login_data: web::Json<LoginRequest>)
 }
 
 pub async fn get_games(pool: web::Data<PgPool>) -> HttpResponse {
-    match sqlx::query("SELECT id, title, description, image_url, genre, price, created_at FROM games ORDER BY created_at DESC")
+    match sqlx::query("SELECT id, title, short_description, image_url, genre, created_at FROM games ORDER BY created_at DESC")
         .fetch_all(pool.get_ref())
         .await {
         Ok(rows) => {
@@ -164,10 +165,15 @@ pub async fn get_games(pool: web::Data<PgPool>) -> HttpResponse {
                 Game {
                     id: row.get("id"),
                     title: row.get("title"),
-                    description: row.get("description"),
+                    short_description: row.get("short_description"),
+                    full_description: String::new(), // Не загружаем полное описание для списка
                     image_url: row.get("image_url"),
+                    screenshots: Vec::new(), // Не загружаем скриншоты для списка
                     genre: row.get("genre"),
-                    price: row.get("price"),  // Теперь price: f32 (REAL в PostgreSQL)
+                    steam_url: None, // Не загружаем для списка
+                    release_date: None, // Не загружаем для списка
+                    developer: String::new(), // Не загружаем для списка
+                    publisher: String::new(), // Не загружаем для списка
                     created_at: row.get("created_at"),
                 }
             }).collect();
@@ -184,6 +190,62 @@ pub async fn get_games(pool: web::Data<PgPool>) -> HttpResponse {
                 success: false,
                 data: None,
                 message: Some("Ошибка при получении списка игр".to_string()),
+            })
+        }
+    }
+}
+
+pub async fn get_game(
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> HttpResponse {
+    let game_id = path.into_inner();
+    
+    println!("🔍 Получение игры с ID: {}", game_id);
+    
+    match sqlx::query("SELECT * FROM games WHERE id = $1")
+        .bind(game_id)
+        .fetch_optional(pool.get_ref())
+        .await {
+        Ok(Some(row)) => {
+            // Получаем массив скриншотов из PostgreSQL
+            let screenshots: Vec<String> = row.get("screenshots");
+            
+            let game = Game {
+                id: row.get("id"),
+                title: row.get("title"),
+                short_description: row.get("short_description"),
+                full_description: row.get("full_description"),
+                image_url: row.get("image_url"),
+                screenshots: screenshots,
+                genre: row.get("genre"),
+                steam_url: row.get("steam_url"),
+                release_date: row.get("release_date"),
+                developer: row.get("developer"),
+                publisher: row.get("publisher"),
+                created_at: row.get("created_at"),
+            };
+
+            HttpResponse::Ok().json(ApiResponse {
+                success: true,
+                data: Some(game),
+                message: None,
+            })
+        }
+        Ok(None) => {
+            println!("❌ Игра с ID {} не найдена", game_id);
+            HttpResponse::NotFound().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Игра не найдена".to_string()),
+            })
+        }
+        Err(e) => {
+            eprintln!("❌ Ошибка при получении игры: {}", e);
+            HttpResponse::InternalServerError().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Ошибка при получении игры".to_string()),
             })
         }
     }

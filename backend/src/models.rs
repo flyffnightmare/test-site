@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct User {
@@ -16,10 +16,15 @@ pub struct User {
 pub struct Game {
     pub id: Uuid,
     pub title: String,
-    pub description: String,
+    pub short_description: String,
+    pub full_description: String,
     pub image_url: String,
+    pub screenshots: Vec<String>,
     pub genre: String,
-    pub price: f32, // Изменено с f64 на f32 для соответствия REAL в PostgreSQL
+    pub steam_url: Option<String>,
+    pub release_date: Option<String>,
+    pub developer: String,
+    pub publisher: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -56,3 +61,4 @@ pub struct ApiResponse<T> {
     pub data: Option<T>,
     pub message: Option<String>,
 }
+

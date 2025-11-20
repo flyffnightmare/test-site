@@ -6,6 +6,7 @@ import Contacts from '../views/Contacts.vue'
 import TermsOfUse from '../views/TermsOfUse.vue'
 import PrivacyPolicy from '../views/PrivacyPolicy.vue'
 import CodeOfConduct from '../views/CodeOfConduct.vue'
+import GameDetails from '../views/GameDetails.vue'
 
 const routes = [
   { path: '/', component: Home },
@@ -14,7 +15,8 @@ const routes = [
   { path: '/contacts', component: Contacts },
   { path: '/terms', component: TermsOfUse },
   { path: '/privacy', component: PrivacyPolicy },
-  { path: '/conduct', component: CodeOfConduct }
+  { path: '/conduct', component: CodeOfConduct },
+  { path: '/games/:id', component: GameDetails }
 ]
 
 const router = createRouter({
