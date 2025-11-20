@@ -60,7 +60,7 @@ npm run dev
 http://localhost:5173
 ```  
 
-API Endpoints
+API Endpoints  
 POST /api/register - Регистрация пользователя  
 POST /api/login - Вход пользователя  
 GET /api/games - Получить список игр  
