@@ -4,11 +4,11 @@
 
 ## Структура проекта
 
-game-company/
-├── frontend/ # Vue.js приложение
-├── backend/ # Rust сервер
-├── docker-compose.yml # Конфигурация PostgreSQL
-└── README.md
+game-company/  
+├── frontend/ # Vue.js приложение  
+├── backend/ # Rust сервер  
+├── docker-compose.yml # Конфигурация PostgreSQL  
+└── README.md  
 
 
 ## Технологии
@@ -32,35 +32,39 @@ game-company/
 ```bash
 git clone <url-репозитория>
 cd game-company
-
-2. Запустите PostgreSQL:
-
+```  
+  
+2. **Запустите PostgreSQL:**  
+```bash
 docker-compose up -d
+```  
 
-3. Настройте бэкенд:
+3. **Настройте бэкенд:**
 
+```bash
 cd backend
 cp .env.example .env
 # Отредактируйте .env при необходимости
 cargo run
+```  
 
-4. Настройте фронтенд:
-
+4. **Настройте фронтенд:**  
+```bash
 cd frontend
 npm install
 npm run dev
+```  
 
-5. Откройте в браузере:
+5. **Откройте в браузере:**
+```bash
 http://localhost:5173
+```  
 
 API Endpoints
-POST /api/register - Регистрация пользователя
-
-POST /api/login - Вход пользователя
-
-GET /api/games - Получить список игр
-
-GET /api/health - Проверка здоровья сервера
+POST /api/register - Регистрация пользователя  
+POST /api/login - Вход пользователя  
+GET /api/games - Получить список игр  
+GET /api/health - Проверка здоровья сервера  
 
 # 3. Создаем примеры файлов окружения
 
@@ -70,3 +74,4 @@ DATABASE_URL=postgres://user:password@localhost:5432/game_company
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 SERVER_HOST=127.0.0.1
 SERVER_PORT=8080
+```
