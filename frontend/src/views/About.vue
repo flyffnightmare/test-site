@@ -93,7 +93,6 @@
                   referrerpolicy="no-referrer-when-downgrade"
                   title="Карта с расположением SibWinterCraft на Северном шоссе 48">
                 </iframe>
-
                 <p class="map-caption">Наш офис расположен в Красноярске на Северном шоссе</p>
               </div>
             </div>

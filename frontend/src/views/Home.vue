@@ -32,16 +32,21 @@
         </div>
       </div>
     </section>
+
+    <!-- Новости -->
+    <NewsCarousel />
   </div>
 </template>
 
 <script>
 import HeroCarousel from '../components/HeroCarousel.vue'
+import NewsCarousel from '../components/NewsCarousel.vue'
 
 export default {
   name: 'Home',
   components: {
-    HeroCarousel
+    HeroCarousel,
+    NewsCarousel
   },
   data() {
     return {

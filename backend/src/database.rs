@@ -1,6 +1,8 @@
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres, Row};
 use std::env;
+use uuid::Uuid;
+use bcrypt::{hash, DEFAULT_COST};
 
 pub type DbPool = Pool<Postgres>;
 
@@ -26,7 +28,7 @@ pub async fn create_pool() -> Result<DbPool, sqlx::Error> {
 pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
     println!("🔄 Выполнение миграций...");
 
-    // Создаем таблицу users
+    // Создаем таблицу users ПЕРВОЙ
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS users (
@@ -41,7 +43,7 @@ pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
     ).execute(pool).await?;
     println!("✅ Таблица 'users' создана/проверена");
 
-    // Создаем таблицу games с обновленной структурой
+    // Создаем таблицу games
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS games (
@@ -63,14 +65,130 @@ pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
     ).execute(pool).await?;
     println!("✅ Таблица 'games' создана/проверена");
 
-    // Проверяем, есть ли уже игры в таблице
-    let result = sqlx::query("SELECT COUNT(*) as count FROM games")
+    // Таблица новостей
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS news (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            title VARCHAR(500) NOT NULL,
+            content TEXT NOT NULL,
+            image_url VARCHAR(500),
+            author_id UUID NOT NULL REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        "#
+    ).execute(pool).await?;
+    println!("✅ Таблица 'news' создана/проверена");
+
+    // Таблица ролей пользователей
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS user_roles (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id),
+            role VARCHAR(50) NOT NULL DEFAULT 'user',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(user_id, role)
+        )
+        "#
+    ).execute(pool).await?;
+    println!("✅ Таблица 'user_roles' создана/проверена");
+
+    // Таблица запросов в поддержку
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS support_requests (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id),
+            subject VARCHAR(500) NOT NULL,
+            message TEXT NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'open',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        "#
+    ).execute(pool).await?;
+    println!("✅ Таблица 'support_requests' создана/проверена");
+
+    // Создаем админ-пользователя если его нет
+    create_admin_user(pool).await?;
+
+    // Добавляем демо-игру
+    create_demo_game(pool).await?;
+
+    // Создаем демо-новости
+    create_demo_news(pool).await?;
+
+    println!("🎉 Все миграции успешно выполнены!");
+    Ok(())
+}
+
+async fn create_admin_user(pool: &DbPool) -> Result<(), sqlx::Error> {
+    println!("👤 Проверка админ-пользователя...");
+
+    // Используем обычный query вместо query!
+    let admin_exists_result = sqlx::query(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE username = 'admin') as exists"
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(row) = admin_exists_result {
+        let exists: bool = row.get("exists");
+        
+        if !exists {
+            println!("📝 Создание админ-пользователя...");
+            
+            let password_hash = hash("admin123", DEFAULT_COST)
+                .expect("Failed to hash admin password");
+
+            let admin_id = Uuid::new_v4();
+
+            sqlx::query(
+                "INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, $4)"
+            )
+            .bind(admin_id)
+            .bind("admin")
+            .bind("admin@sibwintercraft.com")
+            .bind(&password_hash)
+            .execute(pool)
+            .await?;
+
+            // Добавляем роль админа
+            sqlx::query(
+                "INSERT INTO user_roles (user_id, role) VALUES ($1, $2)"
+            )
+            .bind(admin_id)
+            .bind("admin")
+            .execute(pool)
+            .await?;
+
+            println!("✅ Админ-пользователь создан");
+            println!("   👤 Логин: admin");
+            println!("   🔑 Пароль: admin123");
+            println!("   📧 Email: admin@sibwintercraft.com");
+        } else {
+            println!("✅ Админ-пользователь уже существует");
+        }
+    } else {
+        println!("❌ Не удалось проверить существование админ-пользователя");
+    }
+
+    Ok(())
+}
+
+async fn create_demo_game(pool: &DbPool) -> Result<(), sqlx::Error> {
+    println!("🎮 Проверка демо-игры...");
+
+    let game_count_result = sqlx::query("SELECT COUNT(*) as count FROM games")
         .fetch_one(pool)
         .await?;
-    let count: i64 = result.get("count");
+
+    let count: i64 = game_count_result.get("count");
 
     if count == 0 {
-        println!("📝 Добавление игры Tales of Wizeria...");
+        println!("📝 Добавление демо-игры...");
         sqlx::query(
             r#"
             INSERT INTO games (
@@ -115,11 +233,52 @@ pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
             )
             "#
         ).execute(pool).await?;
-        println!("✅ Игра Tales of Wizeria добавлена");
+        println!("✅ Демо-игра добавлена");
     } else {
-        println!("✅ Игры уже существуют в базе, пропускаем добавление");
+        println!("✅ Игры уже существуют в базе");
     }
 
-    println!("🎉 Все миграции успешно выполнены!");
+    Ok(())
+}
+
+async fn create_demo_news(pool: &DbPool) -> Result<(), sqlx::Error> {
+    println!("📰 Проверка демо-новостей...");
+
+    let news_count_result = sqlx::query("SELECT COUNT(*) as count FROM news")
+        .fetch_one(pool)
+        .await?;
+
+    let count: i64 = news_count_result.get("count");
+
+    if count == 0 {
+        println!("📝 Добавление демо-новостей...");
+        
+        // Получаем ID админ-пользователя с обычным query
+        let admin_user_result = sqlx::query("SELECT id FROM users WHERE username = 'admin' LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
+
+        if let Some(row) = admin_user_result {
+            let admin_id: Uuid = row.get("id");
+            
+            sqlx::query(
+                r#"
+                INSERT INTO news (title, content, image_url, author_id) VALUES
+                ('Tales of Wizeria выходит в ранний доступ!', 'Мы рады сообщить, что Tales of Wizeria теперь доступна в раннем доступе на Steam! Присоединяйтесь к приключению и помогите нам сделать игру еще лучше своими отзывами. В раннем доступе вас ждут первые 3 главы игры, 15 уникальных уровней и 5 боссов. Мы будем регулярно обновлять игру на основе ваших отзывов!', '/images/news/tow-early-access.jpg', $1),
+                ('Новые локации в разработке', 'Команда разработчиков активно работает над добавлением новых захватывающих локаций в Tales of Wizeria. Скоро вы сможете исследовать Зачарованные леса и Ледяные пещеры! Каждая новая локация будет содержать уникальные механики, врагов и секреты. Следите за обновлениями!', '/images/news/new-locations.jpg', $1),
+                ('Добро пожаловать на наш новый сайт!', 'Мы запустили совершенно новый сайт SibWinterCraft! Теперь вы можете следить за нашими проектами, читать новости и быть в курсе всех событий. На сайте вы найдете информацию о наших играх, блог разработчиков и возможность связаться с поддержкой. Оставайтесь на связи!', '/images/news/new-website.jpg', $1)
+                "#
+            )
+            .bind(admin_id)
+            .execute(pool)
+            .await?;
+            println!("✅ Демо-новости добавлены");
+        } else {
+            println!("❌ Админ-пользователь не найден для создания новостей");
+        }
+    } else {
+        println!("✅ Новости уже существуют в базе");
+    }
+
     Ok(())
 }

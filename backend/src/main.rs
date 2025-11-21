@@ -2,20 +2,22 @@ mod auth;
 mod database;
 mod handlers;
 mod models;
+mod middleware;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
+// Убираем неиспользуемый импорт
+// use actix_web_httpauth::extractors::bearer::BearerAuth;
+use actix_web_httpauth::middleware::HttpAuthentication;
 use dotenvy::dotenv;
 use std::env;
 
 #[actix_web::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
-    // Убрали env_logger::init() - он не нужен для базовой работы
 
-    println!("🚀 Запуск сервера Game Company...");
+    println!("🚀 Запуск сервера SibWinterCraft...");
 
-    // Создаем пул соединений (миграции выполняются внутри)
     let pool = match database::create_pool().await {
         Ok(pool) => {
             println!("✅ База данных готова к работе");
@@ -30,33 +32,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host = env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = env::var("SERVER_PORT").unwrap_or_else(|_| "8080".to_string());
     let server_url = format!("{}:{}", host, port);
+    let frontend_url = env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     println!("🌐 Сервер запущен на http://{}", server_url);
     println!("📊 API доступно по адресу: http://{}/api", server_url);
-    println!("🎮 Эндпоинты:");
-    println!("   POST /api/register - регистрация");
-    println!("   POST /api/login - вход");
-    println!("   GET  /api/games - список игр");
-    println!("   GET  /api/health - проверка здоровья");
+
+    // Создаем middleware
+    let auth_middleware = HttpAuthentication::bearer(middleware::auth_validator);
+    let admin_middleware = HttpAuthentication::bearer(middleware::admin_validator);
 
     HttpServer::new(move || {
         let cors = Cors::default()
-            .allow_any_origin()
-            .allow_any_method()
-            .allow_any_header()
+            .allowed_origin(&frontend_url)
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE"])
+            .allowed_headers(vec!["content-type", "authorization"])
             .max_age(3600);
 
         App::new()
             .app_data(web::Data::new(pool.clone()))
             .wrap(cors)
-            // Убрали Logger так как он требует env_logger
-            .route("/api/register", web::post().to(handlers::register))
-            .route("/api/login", web::post().to(handlers::login))
-            .route("/api/games", web::get().to(handlers::get_games))
-            .route("/api/games/{id}", web::get().to(handlers::get_game))
-            .route(
-                "/api/health",
-                web::get().to(|| async { "✅ Сервер работает нормально" }),
+            // Публичные маршруты
+            .service(
+                web::scope("/api")
+                    .route("/register", web::post().to(handlers::register))
+                    .route("/login", web::post().to(handlers::login))
+                    .route("/games", web::get().to(handlers::get_games))
+                    .route("/games/{id}", web::get().to(handlers::get_game))
+                    .route("/news", web::get().to(handlers::get_news))
+                    .route("/news", web::post().to(handlers::create_news))
+                    .route("/support/{user_id}", web::post().to(handlers::create_support_request))
+                    .route("/health", web::get().to(handlers::health_check))
+                    .route("/auth/me", web::get().to(handlers::get_current_user))
+            )
+            // Защищенные маршруты (требуют любой валидный JWT)
+            .service(
+                web::scope("/api/protected")
+                    .wrap(auth_middleware.clone())
+                    // Здесь можно добавить защищенные маршруты для обычных пользователей
+            )
+            // Защищенные маршруты администратора (требуют роль admin)
+            .service(
+                web::scope("/api/admin")
+                    .wrap(admin_middleware.clone())
+                    .route("/stats", web::get().to(handlers::get_admin_stats))
+                    .route("/users", web::get().to(handlers::get_users))
+                    .route("/users", web::post().to(handlers::create_user))
+                    .route("/users/{id}", web::put().to(handlers::update_user))
+                    .route("/users/{id}", web::delete().to(handlers::delete_user))
+                    .route("/support-requests", web::get().to(handlers::get_support_requests))
+                    .route("/activity", web::get().to(handlers::get_recent_activity))
             )
     })
     .bind(&server_url)?

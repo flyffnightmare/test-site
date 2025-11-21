@@ -10,11 +10,12 @@
     </main>
     <Footer />
     
+    <!-- Модальные окна -->
     <AuthModal 
       v-if="showLoginModal" 
       mode="login" 
       @close="showLoginModal = false"
-      @switch-to-register="showLoginModal = false; showRegisterModal = true"
+      @switch-to-register="switchToRegister"
       @login-success="onLoginSuccess"
     />
     
@@ -22,7 +23,7 @@
       v-if="showRegisterModal" 
       mode="register" 
       @close="showRegisterModal = false"
-      @switch-to-login="showRegisterModal = false; showLoginModal = true"
+      @switch-to-login="switchToLogin"
     />
   </div>
 </template>
@@ -47,14 +48,59 @@ export default {
   },
   methods: {
     onLoginSuccess(user) {
-      // Обновляем данные пользователя в Header компоненте
-      this.$refs.header.user = user
+      if (this.$refs.header) {
+        this.$refs.header.user = user
+      }
+      
+      if (user.role === 'admin') {
+        console.log('👮 Администратор вошел в систему')
+        setTimeout(() => {
+          if (confirm(`🎮 Добро пожаловать, ${user.username}!\n\nВы вошли как администратор. Хотите перейти в админ-панель?`)) {
+            this.$router.push('/admin')
+          }
+        }, 500)
+      }
+    },
+    
+    switchToRegister() {
+      this.showLoginModal = false
+      setTimeout(() => {
+        this.showRegisterModal = true
+      }, 300)
+    },
+    
+    switchToLogin() {
+      this.showRegisterModal = false
+      setTimeout(() => {
+        this.showLoginModal = true
+      }, 300)
+    }
+  },
+  watch: {
+    showLoginModal(newVal) {
+      this.toggleBodyScroll(!newVal)
+    },
+    showRegisterModal(newVal) {
+      this.toggleBodyScroll(!newVal)
+    }
+  },
+  methods: {
+    toggleBodyScroll(enable) {
+      if (enable) {
+        document.body.classList.remove('modal-open')
+      } else {
+        document.body.classList.add('modal-open')
+      }
     }
   }
 }
 </script>
 
 <style>
+body.modal-open {
+  overflow: hidden;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -66,6 +112,11 @@ body {
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   color: #fff;
   min-height: 100vh;
+}
+
+/* Блокировка скролла когда модалка открыта */
+body.modal-open {
+  overflow: hidden;
 }
 
 #app {
