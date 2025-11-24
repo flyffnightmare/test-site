@@ -345,15 +345,45 @@ pub async fn create_news(
     req: HttpRequest,
     news_data: web::Json<CreateNewsRequest>,
 ) -> HttpResponse {
-    // Сохраняем extensions в переменную чтобы избежать проблем с временными значениями
-    let extensions = req.extensions();
-    let claims = match extensions.get::<crate::models::Claims>() {
-        Some(claims) => claims,
-        None => return HttpResponse::Unauthorized().json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            message: Some("Неавторизованный доступ".to_string()),
-        }),
+    // Получаем токен из заголовка
+    let auth_header = req.headers().get("Authorization");
+    
+    let token = if let Some(header) = auth_header {
+        if let Ok(header_str) = header.to_str() {
+            if header_str.starts_with("Bearer ") {
+                Some(&header_str[7..])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let token = match token {
+        Some(t) => t,
+        None => {
+            return HttpResponse::Unauthorized().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Токен не предоставлен".to_string()),
+            });
+        }
+    };
+
+    // Валидируем JWT токен
+    let claims = match crate::auth::validate_jwt(token) {
+        Ok(claims) => claims,
+        Err(e) => {
+            println!("❌ Ошибка валидации JWT: {}", e);
+            return HttpResponse::Unauthorized().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Невалидный токен".to_string()),
+            });
+        }
     };
 
     // Проверяем права (только админы могут создавать новости)
@@ -468,21 +498,53 @@ pub async fn health_check(pool: web::Data<PgPool>) -> HttpResponse {
 }
 
 // Получение текущего пользователя
+// handlers.rs - в функции get_current_user
 pub async fn get_current_user(
     req: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> HttpResponse {
-    // Сохраняем extensions в переменную чтобы избежать проблем с временными значениями
-    let extensions = req.extensions();
-    let claims = match extensions.get::<crate::models::Claims>() {
-        Some(claims) => claims,
-        None => return HttpResponse::Unauthorized().json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            message: Some("Неавторизованный доступ".to_string()),
-        }),
+    // Получаем токен из заголовка
+    let auth_header = req.headers().get("Authorization");
+    
+    let token = if let Some(header) = auth_header {
+        if let Ok(header_str) = header.to_str() {
+            if header_str.starts_with("Bearer ") {
+                Some(&header_str[7..]) // Убираем "Bearer "
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
     };
 
+    let token = match token {
+        Some(t) => t,
+        None => {
+            return HttpResponse::Unauthorized().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Токен не предоставлен".to_string()),
+            });
+        }
+    };
+
+    // Валидируем JWT токен
+    let claims = match crate::auth::validate_jwt(token) {
+        Ok(claims) => claims,
+        Err(e) => {
+            println!("❌ Ошибка валидации JWT: {}", e);
+            return HttpResponse::Unauthorized().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Невалидный токен".to_string()),
+            });
+        }
+    };
+
+    // Получаем пользователя из базы
     match sqlx::query("SELECT id, username, email FROM users WHERE id = $1")
         .bind(&claims.sub)
         .fetch_optional(pool.get_ref())
@@ -492,7 +554,7 @@ pub async fn get_current_user(
                 id: row.get("id"),
                 username: row.get("username"),
                 email: row.get("email"),
-                role: claims.role.clone(),
+                role: claims.role,
             };
 
             HttpResponse::Ok().json(ApiResponse {
@@ -564,7 +626,7 @@ pub async fn get_admin_stats(pool: web::Data<PgPool>) -> HttpResponse {
 // Получение списка пользователей
 pub async fn get_users(pool: web::Data<PgPool>) -> HttpResponse {
     match sqlx::query(
-        "SELECT u.id, u.username, u.email, u.created_at, u.updated_at, 
+        "SELECT u.id, u.username, u.email, u.created_at, 
                 COALESCE(ur.role, 'user') as role
          FROM users u
          LEFT JOIN user_roles ur ON u.id = ur.user_id
@@ -579,8 +641,7 @@ pub async fn get_users(pool: web::Data<PgPool>) -> HttpResponse {
                     "username": row.get::<String, &str>("username"),
                     "email": row.get::<String, &str>("email"),
                     "role": row.get::<String, &str>("role"),
-                    "created_at": row.get::<chrono::DateTime<chrono::Utc>, &str>("created_at"),
-                    "updated_at": row.get::<chrono::DateTime<chrono::Utc>, &str>("updated_at")
+                    "created_at": row.get::<chrono::DateTime<chrono::Utc>, &str>("created_at")
                 })
             }).collect();
 
@@ -604,7 +665,7 @@ pub async fn get_users(pool: web::Data<PgPool>) -> HttpResponse {
 // Создание пользователя (админ)
 pub async fn create_user(
     pool: web::Data<PgPool>,
-    user_data: web::Json<RegisterRequest>,
+    user_data: web::Json<CreateUserRequest>,
 ) -> HttpResponse {
     // Валидация
     if !validate_username(&user_data.username) || !validate_email(&user_data.email) || !validate_password(&user_data.password) {
@@ -654,9 +715,11 @@ pub async fn create_user(
         Ok(row) => {
             let user_id: Uuid = row.get("id");
             
-            // Добавляем роль пользователя (по умолчанию 'user')
-            sqlx::query("INSERT INTO user_roles (user_id, role) VALUES ($1, 'user')")
+            // Добавляем роль пользователя
+            let role = user_data.role.as_deref().unwrap_or("user");
+            sqlx::query("INSERT INTO user_roles (user_id, role) VALUES ($1, $2)")
                 .bind(user_id)
+                .bind(role)
                 .execute(pool.get_ref())
                 .await
                 .ok();
@@ -665,7 +728,7 @@ pub async fn create_user(
                 id: row.get("id"),
                 username: row.get("username"),
                 email: row.get("email"),
-                role: "user".to_string(),
+                role: role.to_string(),
             };
 
             HttpResponse::Ok().json(ApiResponse {
@@ -684,6 +747,7 @@ pub async fn create_user(
         }
     }
 }
+
 
 // Обновление пользователя
 pub async fn update_user(
@@ -738,6 +802,29 @@ pub async fn update_user(
         counter += 1;
     }
 
+    if let Some(password) = &user_data.password {
+        if !validate_password(password) {
+            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Неверный формат пароля".to_string()),
+            });
+        }
+        let password_hash = match hash_password(password) {
+            Ok(hash) => hash,
+            Err(_) => {
+                return HttpResponse::InternalServerError().json(ApiResponse::<()> {
+                    success: false,
+                    data: None,
+                    message: Some("Ошибка при хешировании пароля".to_string()),
+                });
+            }
+        };
+        query.push_str(&format!(", password_hash = ${}", counter));
+        params.push(password_hash);
+        counter += 1;
+    }
+
     query.push_str(" WHERE id = $");
     query.push_str(&counter.to_string());
     params.push(user_id.to_string());
@@ -784,15 +871,11 @@ pub async fn update_user(
     }
 }
 
-// Удаление пользователя
 pub async fn delete_user(
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
 ) -> HttpResponse {
     let user_id = path.into_inner();
-
-    // Нельзя удалить самого себя
-    // (это можно проверить через claims, но для простоты пропустим)
 
     // Удаляем связанные данные
     sqlx::query("DELETE FROM user_roles WHERE user_id = $1")
@@ -910,22 +993,6 @@ pub async fn get_recent_activity(pool: web::Data<PgPool>) -> HttpResponse {
         }
     }
 
-    // Новые запросы в поддержку
-    if let Ok(rows) = sqlx::query(
-        "SELECT subject, created_at FROM support_requests ORDER BY created_at DESC LIMIT 5"
-    )
-    .fetch_all(pool.get_ref())
-    .await {
-        for row in rows {
-            activities.push(serde_json::json!({
-                "id": Uuid::new_v4(),
-                "icon": "🛠️",
-                "text": format!("Новый запрос в поддержку: {}", row.get::<String, &str>("subject")),
-                "created_at": row.get::<chrono::DateTime<chrono::Utc>, &str>("created_at")
-            }));
-        }
-    }
-
     // Сортируем по дате и берем 10 последних
     activities.sort_by(|a, b| {
         let a_date: chrono::DateTime<chrono::Utc> = serde_json::from_value(a["created_at"].clone()).unwrap();
@@ -942,10 +1009,18 @@ pub async fn get_recent_activity(pool: web::Data<PgPool>) -> HttpResponse {
     })
 }
 
-// Модель для обновления пользователя
+#[derive(Debug, serde::Deserialize)]
+pub struct CreateUserRequest {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+    pub role: Option<String>,
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct UpdateUserRequest {
     pub username: Option<String>,
     pub email: Option<String>,
+    pub password: Option<String>, // ДОБАВЬТЕ это поле
     pub role: Option<String>,
 }

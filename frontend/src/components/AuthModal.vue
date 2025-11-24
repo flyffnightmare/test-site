@@ -55,6 +55,13 @@
           {{ loading ? 'Загрузка...' : (mode === 'login' ? 'Войти' : 'Зарегистрироваться') }}
         </button>
         
+        <!-- УБИРАЕМ автоматический редирект в confirm -->
+        <div v-if="mode === 'login' && !loading" class="admin-redirect">
+          <button type="button" class="btn btn-outline" @click="loginWithoutRedirect">
+            Войти без перехода в админку
+          </button>
+        </div>
+        
         <div class="auth-switch">
           <span>{{ mode === 'login' ? 'Нет аккаунта?' : 'Уже есть аккаунт?' }}</span>
           <button type="button" class="switch-btn" @click="switchMode" :disabled="loading">
@@ -103,10 +110,7 @@ export default {
       this.loading = true
       
       try {
-        console.log('🔄 Начало отправки формы...')
-        
-        // Проверка капчи для ВСЕХ форм
-        if (this.form.captcha !== this.captcha) {
+        if (this.mode === 'register' && this.form.captcha !== this.captcha) {
           alert('Неверная капча!')
           this.captcha = this.generateCaptcha()
           this.form.captcha = ''
@@ -114,13 +118,12 @@ export default {
         }
 
         const url = this.mode === 'login' ? '/api/login' : '/api/register'
-        console.log('📡 URL запроса:', url)
         
         const requestData = this.mode === 'login' 
           ? {
               username: this.form.username,
               password: this.form.password,
-              captcha: this.form.captcha // 👈 Добавляем капчу для логина
+              captcha: this.form.captcha
             }
           : {
               username: this.form.username,
@@ -129,8 +132,6 @@ export default {
               captcha: this.form.captcha
             }
 
-        console.log('📦 Данные для отправки:', requestData)
-
         const response = await axios.post(url, requestData, {
           timeout: 10000,
           headers: {
@@ -138,30 +139,30 @@ export default {
           }
         })
 
-        console.log('✅ Ответ от сервера:', response.data)
-
         if (response.data.success) {
           if (this.mode === 'login') {
             const token = response.data.data.token
             const user = response.data.data.user
             
-            console.log('🔑 Токен получен:', token ? 'да' : 'нет')
-            console.log('🔑 Длина токена:', token.length)
-            console.log('🔑 Первые 50 символов токена:', token.substring(0, 50))
-            console.log('👤 Данные пользователя:', user)
-            
+            // СОХРАНЯЕМ ТОКЕН И ПОЛЬЗОВАТЕЛЯ
             localStorage.setItem('auth_token', token)
             localStorage.setItem('user', JSON.stringify(user))
             
+            console.log('✅ Успешный вход, токен сохранен')
+            
+            // ОТПРАВЛЯЕМ СОБЫТИЕ О УСПЕШНОМ ЛОГИНЕ
             this.$emit('login-success', user)
             this.$emit('close')
             
+            // ПРЕДЛАГАЕМ ПЕРЕЙТИ В АДМИНКУ, НО НЕ ДЕЛАЕМ АВТОМАТИЧЕСКИ
             if (user.role === 'admin') {
               setTimeout(() => {
                 if (confirm(`🎮 Добро пожаловать, ${user.username}!\n\nВы вошли как администратор. Хотите перейти в админ-панель?`)) {
-                  this.$router.push('/admin')
+                  this.goToAdmin()
+                } else {
+                  alert(`✅ Добро пожаловать, ${user.username}!`)
                 }
-              }, 500)
+              }, 100)
             } else {
               alert(`✅ Добро пожаловать, ${user.username}!`)
             }
@@ -169,42 +170,71 @@ export default {
             this.$emit('switch-to-login')
             alert('✅ Регистрация успешна! Теперь вы можете войти.')
           }
-        } else {
-          throw new Error(response.data.message || 'Неизвестная ошибка сервера')
         }
       } catch (error) {
-        console.error('❌ Полная ошибка авторизации:', error)
-        
-        let errorMessage = 'Произошла ошибка'
-
-        if (error.response) {
-          if (error.response.status === 401) {
-            errorMessage = 'Неверное имя пользователя или пароль'
-          } else if (error.response.status === 409) {
-            errorMessage = 'Пользователь с таким именем или email уже существует'
-          } else if (error.response.status === 400) {
-            errorMessage = error.response.data?.message || 'Неверные данные'
-          } else if (error.response.status === 500) {
-            errorMessage = 'Ошибка сервера. Попробуйте позже.'
-          } else {
-            errorMessage = error.response.data?.message || `Ошибка сервера: ${error.response.status}`
-          }
-        } else if (error.request) {
-          errorMessage = 'Нет соединения с сервером. Проверьте подключение к интернету.'
-        } else if (error.code === 'ECONNABORTED') {
-          errorMessage = 'Превышено время ожидания ответа от сервера'
-        } else {
-          errorMessage = error.message || 'Неизвестная ошибка'
-        }
-
+        console.error('❌ Ошибка авторизации:', error)
+        const errorMessage = error.response?.data?.message || 'Произошла ошибка'
         alert(`❌ ${errorMessage}`)
         
-        // Обновляем капчу при любой ошибке
-        this.captcha = this.generateCaptcha()
-        this.form.captcha = ''
+        if (this.mode === 'register') {
+          this.captcha = this.generateCaptcha()
+          this.form.captcha = ''
+        }
       } finally {
         this.loading = false
       }
+    },
+
+    // НОВЫЙ МЕТОД: Вход без предложения перейти в админку
+    async loginWithoutRedirect() {
+      this.loading = true
+      
+      try {
+        const url = '/api/login'
+        const requestData = {
+          username: this.form.username,
+          password: this.form.password,
+          captcha: this.form.captcha
+        }
+
+        const response = await axios.post(url, requestData)
+        
+        if (response.data.success) {
+          const token = response.data.data.token
+          const user = response.data.data.user
+          
+          localStorage.setItem('auth_token', token)
+          localStorage.setItem('user', JSON.stringify(user))
+          
+          console.log('✅ Успешный вход (без редиректа)')
+          
+          this.$emit('login-success', user)
+          this.$emit('close')
+          alert(`✅ Добро пожаловать, ${user.username}!`)
+        }
+      } catch (error) {
+        console.error('❌ Ошибка входа:', error)
+        const errorMessage = error.response?.data?.message || 'Произошла ошибка'
+        alert(`❌ ${errorMessage}`)
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // Метод для перехода в админку
+    goToAdmin() {
+      console.log('🔄 Переход в админ-панель...')
+      console.log('🔐 Токен перед переходом:', localStorage.getItem('auth_token') ? 'есть' : 'нет')
+      
+      // Проверяем что токен сохранен
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        alert('❌ Ошибка: токен не найден. Войдите снова.')
+        return
+      }
+      
+      // Переходим в админку
+      this.$router.push('/admin')
     },
     
     switchMode() {
@@ -222,22 +252,30 @@ export default {
         this.$emit('switch-to-login')
       }
     }
-  },
-  watch: {
-    mode() {
-      this.form = {
-        username: '',
-        email: '',
-        password: '',
-        captcha: ''
-      }
-      this.captcha = this.generateCaptcha()
-    }
   }
 }
 </script>
 
+
 <style scoped>
+
+.admin-redirect {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid #00aeff;
+  color: #00aeff;
+}
+
+.btn-outline:hover {
+  background: rgba(0, 174, 255, 0.1);
+}
+
 .modal-overlay {
   position: fixed;
   top: 0 !important;

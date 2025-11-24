@@ -6,13 +6,13 @@ use jsonwebtoken::{decode, DecodingKey, Validation};
 use std::env;
 use crate::models::Claims;
 
-// Middleware для проверки JWT
 pub async fn auth_validator(
     req: ServiceRequest,
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (Error, ServiceRequest)> {
     let token = credentials.token();
-    println!("🔐 Auth middleware: получен токен длиной {}", token.len());
+    
+    println!("🔐 Auth middleware: проверка токена длиной {}", token.len());
     
     match validate_jwt(token) {
         Ok(claims) => {
@@ -28,12 +28,12 @@ pub async fn auth_validator(
     }
 }
 
-// Middleware для проверки роли администратора
 pub async fn admin_validator(
     req: ServiceRequest,
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (Error, ServiceRequest)> {
     let token = credentials.token();
+    
     println!("🔐 Admin middleware: проверка прав администратора");
     
     match validate_jwt(token) {
@@ -58,7 +58,11 @@ pub async fn admin_validator(
 }
 
 fn validate_jwt(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
-    let secret = env::var("JWT_SECRET").unwrap_or_else(|_| "fallback-secret-key".to_string());
+    let secret = env::var("JWT_SECRET").unwrap_or_else(|_| {
+        eprintln!("⚠️ JWT_SECRET not set, using fallback");
+        "fallback-secret-key-for-development".to_string()
+    });
+    
     decode::<Claims>(
         token, 
         &DecodingKey::from_secret(secret.as_ref()), 

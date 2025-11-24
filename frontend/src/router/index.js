@@ -9,9 +9,8 @@ import CodeOfConduct from '../views/CodeOfConduct.vue'
 import GameDetails from '../views/GameDetails.vue'
 import UserProfile from '../views/UserProfile.vue'
 import AdminPanel from '../views/AdminPanel.vue'
-import AdminTest from '../views/AdminTest.vue'
-import Login from '../views/Login.vue' // 👈 Добавляем импорт Login
-import { adminGuard, authGuard } from './guards' // 👈 Добавляем authGuard
+import Login from '../views/Login.vue'
+import { adminGuard } from './guards' // 👈 ТОЛЬКО adminGuard
 
 const routes = [
   { 
@@ -58,26 +57,19 @@ const routes = [
     path: '/profile', 
     name: 'UserProfile',
     component: UserProfile,
-    beforeEnter: authGuard // 👈 Защищаем профиль
+    // Убираем beforeEnter если не используем authGuard
   },
   {
     path: '/admin',
     name: 'AdminPanel',
-    component: AdminPanel, // 👈 Используем прямой импорт
+    component: AdminPanel,
     beforeEnter: adminGuard
   },
-  { 
-    path: '/admin-test', 
-    name: 'AdminTest',
-    component: AdminTest 
-  },
-  // 👇 ДОБАВЛЯЕМ МАРШРУТ ДЛЯ /LOGIN
   { 
     path: '/login', 
     name: 'Login',
     component: Login 
   },
-  // 👇 Fallback route для несуществующих путей
   { 
     path: '/:pathMatch(.*)*', 
     name: 'NotFound',
@@ -90,7 +82,6 @@ const router = createRouter({
   routes
 })
 
-// Глобальный beforeEach для отладки
 router.beforeEach((to, from, next) => {
   console.log(`🔄 Навигация: ${from.path} → ${to.path}`)
   next()

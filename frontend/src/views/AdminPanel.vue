@@ -273,6 +273,11 @@
             <input v-model="userForm.username" type="text" required>
           </div>
           <div class="form-group">
+            <label>Пароль:</label>
+            <input v-model="userForm.password" type="password" :required="!editingUser">
+            <small v-if="editingUser">Оставьте пустым, если не хотите менять пароль</small>
+          </div>
+          <div class="form-group">
             <label>Email:</label>
             <input v-model="userForm.email" type="email" required>
           </div>
@@ -478,7 +483,8 @@ export default {
           this.currentUser = response.data.data
           console.log('✅ Доступ к админ-панели разрешен')
         } else {
-          this.tokenError = true
+          this.hasAdminAccess = false
+          console.log('❌ Недостаточно прав')
         }
       } catch (error) {
         console.error('❌ Ошибка проверки токена:', error)
@@ -492,46 +498,55 @@ export default {
       }
     },
 
-    async loadData() {
-      this.isLoading = true
-      this.loadingStep = 'Загрузка данных...'
-      
+  async loadData() {
+    this.isLoading = true
+    this.loadingStep = 'Загрузка данных...'
+    
+    try {
+      const token = localStorage.getItem('auth_token')
+      const headers = { Authorization: `Bearer ${token}` }
+
+      // Загрузка пользователей
       try {
-        const token = localStorage.getItem('auth_token')
-        const headers = { Authorization: `Bearer ${token}` }
-
-        // Загрузка статистики
-        const statsRes = await axios.get('/api/admin/stats', { headers })
-        if (statsRes.data.success) this.stats = statsRes.data.data
-
-        // Загрузка пользователей
         const usersRes = await axios.get('/api/admin/users', { headers })
         if (usersRes.data.success) this.users = usersRes.data.data
-
-        // Загрузка игр
-        const gamesRes = await axios.get('/api/games', { headers })
-        if (gamesRes.data.success) this.games = gamesRes.data.data
-
-        // Загрузка новостей
-        const newsRes = await axios.get('/api/news', { headers })
-        if (newsRes.data.success) this.news = newsRes.data.data
-
-        // Загрузка запросов поддержки
-        const supportRes = await axios.get('/api/admin/support-requests', { headers })
-        if (supportRes.data.success) this.supportRequests = supportRes.data.data
-
-        // Загрузка активности
-        const activityRes = await axios.get('/api/admin/activity', { headers })
-        if (activityRes.data.success) this.recentActivity = activityRes.data.data
-
       } catch (error) {
-        console.error('❌ Ошибка загрузки данных:', error)
-        // Fallback на демо-данные для разработки
-        this.loadDemoData()
-      } finally {
-        this.isLoading = false
+        console.warn('❌ Ошибка загрузки пользователей:', error.message)
+        this.users = []
       }
-    },
+
+      // Загрузка игр (публичный маршрут)
+      try {
+        const gamesRes = await axios.get('/api/games')
+        if (gamesRes.data.success) this.games = gamesRes.data.data
+      } catch (error) {
+        console.warn('❌ Ошибка загрузки игр:', error.message)
+        this.games = []
+      }
+
+      // Загрузка новостей (публичный маршрут)
+      try {
+        const newsRes = await axios.get('/api/news')
+        if (newsRes.data.success) this.news = newsRes.data.data
+      } catch (error) {
+        console.warn('❌ Ошибка загрузки новостей:', error.message)
+        this.news = []
+      }
+
+      // Остальные данные пока пропускаем
+      this.stats = {
+        users: this.users.length,
+        games: this.games.length,
+        news: this.news.length,
+        supportRequests: 0
+      }
+
+    } catch (error) {
+      console.error('❌ Общая ошибка загрузки данных:', error)
+    } finally {
+      this.isLoading = false
+    }
+  },
 
     loadDemoData() {
       console.log('🔄 Используем демо-данные')
@@ -606,141 +621,206 @@ export default {
     // Методы для пользователей
     editUser(user) {
       this.editingUser = user
-      this.userForm = { ...user }
+      this.userForm = { 
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        password: '' // Добавляем поле для пароля при редактировании
+      }
       this.showUserModal = true
     },
     
     async saveUser() {
-      try {
-        const token = localStorage.getItem('auth_token')
-        const url = this.editingUser 
-          ? `/api/admin/users/${this.editingUser.id}`
-          : '/api/admin/users'
-        
-        const method = this.editingUser ? 'put' : 'post'
-        
-        const response = await axios[method](url, this.userForm, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+    try {
+      const token = localStorage.getItem('auth_token')
+      
+      if (this.editingUser) {
+        // Обновление пользователя
+        const response = await axios.put(
+          `/api/admin/users/${this.editingUser.id}`,
+          {
+            username: this.userForm.username,
+            email: this.userForm.email,
+            role: this.userForm.role,
+            password: this.userForm.password || undefined // Пароль опционально
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
 
         if (response.data.success) {
           this.showUserModal = false
           this.resetForms()
           await this.loadData()
+          alert('Пользователь успешно обновлен')
         }
-      } catch (error) {
-        console.error('❌ Ошибка сохранения пользователя:', error)
-        alert('Ошибка при сохранении пользователя')
-      }
-    },
-    
-    async deleteUser(userId) {
-      if (!confirm('Вы уверены, что хотите удалить этого пользователя?')) return
-
-      try {
-        const token = localStorage.getItem('auth_token')
-        const response = await axios.delete(`/api/admin/users/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+      } else {
+        // Создание пользователя
+        const response = await axios.post(
+          '/api/admin/users',
+          {
+            username: this.userForm.username,
+            email: this.userForm.email,
+            password: this.userForm.password,
+            role: this.userForm.role
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
 
         if (response.data.success) {
+          this.showUserModal = false
+          this.resetForms()
           await this.loadData()
+          alert('Пользователь успешно создан')
         }
-      } catch (error) {
-        console.error('❌ Ошибка удаления пользователя:', error)
-        alert('Ошибка при удалении пользователя')
       }
-    },
+    } catch (error) {
+      console.error('❌ Ошибка сохранения пользователя:', error)
+      alert('Ошибка при сохранении пользователя: ' + (error.response?.data?.message || error.message))
+    }
+  },
+
+    
+   async deleteUser(userId) {
+    if (!confirm('Вы уверены, что хотите удалить этого пользователя?')) return
+
+    try {
+      const token = localStorage.getItem('auth_token')
+      const response = await axios.delete(`/api/admin/users/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+
+      if (response.data.success) {
+        await this.loadData()
+        alert('Пользователь успешно удален')
+      }
+    } catch (error) {
+      console.error('❌ Ошибка удаления пользователя:', error)
+      alert('Ошибка при удалении пользователя: ' + (error.response?.data?.message || error.message))
+    }
+  },
 
     // Методы для игр
     editGame(game) {
       this.editingGame = game
-      this.gameForm = { ...game }
+      this.gameForm = { 
+        title: game.title,
+        short_description: game.short_description,
+        full_description: game.full_description || '',
+        genre: game.genre,
+        platform: game.platform,
+        image_url: game.image_url || '',
+        steam_url: game.steam_url || '',
+        release_date: game.release_date || '',
+        developer: game.developer || '',
+        publisher: game.publisher || ''
+      }
       this.showGameModal = true
     },
-    
-    async saveGame() {
-      try {
-        const token = localStorage.getItem('auth_token')
-        const url = this.editingGame 
-          ? `/api/admin/games/${this.editingGame.id}`
-          : '/api/admin/games'
-        
-        const method = this.editingGame ? 'put' : 'post'
-        
-        const response = await axios[method](url, this.gameForm, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
 
-        if (response.data.success) {
-          this.showGameModal = false
-          this.resetForms()
-          await this.loadData()
-        }
-      } catch (error) {
-        console.error('❌ Ошибка сохранения игры:', error)
-        alert('Ошибка при сохранении игры')
-      }
-    },
     
-    async deleteGame(gameId) {
+   async saveGame() {
+    try {
+      const token = localStorage.getItem('auth_token')
+      
+      // Временно используем публичный маршрут для новостей как пример
+      // Вам нужно будет добавить аналогичные маршруты для игр в бэкенде
+      alert('Функциональность добавления/редактирования игр требует настройки бэкенда')
+      
+      // Заглушка - после настройки бэкенда раскомментируйте:
+      /*
+      if (this.editingGame) {
+        const response = await axios.put(
+          `/api/admin/games/${this.editingGame.id}`,
+          this.gameForm,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+      } else {
+        const response = await axios.post(
+          '/api/admin/games',
+          this.gameForm,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+      }
+      */
+      
+      this.showGameModal = false
+      this.resetForms()
+      
+    } catch (error) {
+      console.error('❌ Ошибка сохранения игры:', error)
+      alert('Ошибка при сохранении игры: ' + (error.response?.data?.message || error.message))
+    }
+  },
+    
+   async deleteGame(gameId) {
       if (!confirm('Вы уверены, что хотите удалить эту игру?')) return
 
       try {
         const token = localStorage.getItem('auth_token')
-        const response = await axios.delete(`/api/admin/games/${gameId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-
-        if (response.data.success) {
-          await this.loadData()
-        }
+        // Временно заглушка
+        alert('Функциональность удаления игр требует настройки бэкенда')
+        
+        // После настройки бэкенда:
+        // const response = await axios.delete(`/api/admin/games/${gameId}`, {
+        //   headers: { Authorization: `Bearer ${token}` }
+        // })
+        
       } catch (error) {
         console.error('❌ Ошибка удаления игры:', error)
-        alert('Ошибка при удалении игры')
+        alert('Ошибка при удалении игры: ' + (error.response?.data?.message || error.message))
       }
     },
 
     // Методы для новостей
     editNews(news) {
       this.editingNews = news
-      this.newsForm = { ...news }
+      this.newsForm = { 
+        title: news.title,
+        content: news.content,
+        image_url: news.image_url || ''
+      }
       this.showNewsModal = true
     },
     
     async saveNews() {
-      try {
-        const token = localStorage.getItem('auth_token')
-        const response = await axios.post('/api/news', this.newsForm, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+    try {
+      const token = localStorage.getItem('auth_token')
+      
+      if (this.editingNews) {
+        // Обновление новости - нужно добавить маршрут в бэкенде
+        alert('Редактирование новостей требует настройки бэкенда')
+      } else {
+        // Создание новости
+        const response = await axios.post(
+          '/api/news',
+          this.newsForm,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
 
         if (response.data.success) {
           this.showNewsModal = false
           this.resetForms()
           await this.loadData()
+          alert('Новость успешно создана')
         }
-      } catch (error) {
-        console.error('❌ Ошибка сохранения новости:', error)
-        alert('Ошибка при сохранении новости')
       }
-    },
+    } catch (error) {
+      console.error('❌ Ошибка сохранения новости:', error)
+      alert('Ошибка при сохранении новости: ' + (error.response?.data?.message || error.message))
+    }
+  },
     
     async deleteNews(newsId) {
       if (!confirm('Вы уверены, что хотите удалить эту новость?')) return
 
       try {
         const token = localStorage.getItem('auth_token')
-        const response = await axios.delete(`/api/news/${newsId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-
-        if (response.data.success) {
-          await this.loadData()
-        }
+        // Удаление новости - нужно добавить маршрут в бэкенде
+        alert('Удаление новостей требует настройки бэкенда')
+        
       } catch (error) {
         console.error('❌ Ошибка удаления новости:', error)
-        alert('Ошибка при удалении новости')
+        alert('Ошибка при удалении новости: ' + (error.response?.data?.message || error.message))
       }
     },
 
@@ -782,9 +862,29 @@ export default {
 
     // Вспомогательные методы
     resetForms() {
-      this.userForm = { username: '', email: '', role: 'user' }
-      this.gameForm = { title: '', short_description: '', full_description: '', genre: '', platform: '', image_url: '', steam_url: '' }
-      this.newsForm = { title: '', content: '', image_url: '' }
+      this.userForm = { 
+        username: '', 
+        email: '', 
+        role: 'user',
+        password: '' 
+      }
+      this.gameForm = { 
+        title: '', 
+        short_description: '', 
+        full_description: '', 
+        genre: '', 
+        platform: '', 
+        image_url: '', 
+        steam_url: '',
+        release_date: '',
+        developer: '',
+        publisher: ''
+      }
+      this.newsForm = { 
+        title: '', 
+        content: '', 
+        image_url: '' 
+      }
       this.editingUser = null
       this.editingGame = null
       this.editingNews = null
