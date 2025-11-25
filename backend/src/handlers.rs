@@ -1009,6 +1009,333 @@ pub async fn get_recent_activity(pool: web::Data<PgPool>) -> HttpResponse {
     })
 }
 
+pub async fn get_admin_news(pool: web::Data<PgPool>) -> HttpResponse {
+    println!("📰 Получение новостей для админки...");
+    
+    match sqlx::query(
+        "SELECT n.*, u.username as author_name 
+         FROM news n 
+         JOIN users u ON n.author_id = u.id 
+         ORDER BY n.created_at DESC"
+    )
+    .fetch_all(pool.get_ref())
+    .await {
+        Ok(rows) => {
+            println!("✅ Найдено {} новостей", rows.len());
+            let news: Vec<serde_json::Value> = rows.iter().map(|row| {
+                serde_json::json!({
+                    "id": row.get::<Uuid, &str>("id"),
+                    "title": row.get::<String, &str>("title"),
+                    "content": row.get::<String, &str>("content"),
+                    "image_url": row.get::<Option<String>, &str>("image_url"),
+                    "author_id": row.get::<Uuid, &str>("author_id"),
+                    "author_name": row.get::<String, &str>("author_name"),
+                    "created_at": row.get::<chrono::DateTime<chrono::Utc>, &str>("created_at"),
+                    "updated_at": row.get::<chrono::DateTime<chrono::Utc>, &str>("updated_at")
+                })
+            }).collect();
+
+            HttpResponse::Ok().json(ApiResponse {
+                success: true,
+                data: Some(news),
+                message: None,
+            })
+        }
+        Err(e) => {
+            eprintln!("❌ Ошибка при получении новостей: {}", e);
+            HttpResponse::InternalServerError().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Ошибка при получении новостей".to_string()),
+            })
+        }
+    }
+}
+
+// Удаление новости
+pub async fn delete_news(
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> HttpResponse {
+    let news_id = path.into_inner();
+    println!("🗑️ Удаление новости с ID: {}", news_id);
+
+    match sqlx::query("DELETE FROM news WHERE id = $1")
+        .bind(news_id)
+        .execute(pool.get_ref())
+        .await {
+        Ok(result) => {
+            if result.rows_affected() > 0 {
+                println!("✅ Новость успешно удалена");
+                HttpResponse::Ok().json(ApiResponse::<()> {
+                    success: true,
+                    data: None,
+                    message: Some("Новость успешно удалена".to_string()),
+                })
+            } else {
+                println!("❌ Новость не найдена");
+                HttpResponse::NotFound().json(ApiResponse::<()> {
+                    success: false,
+                    data: None,
+                    message: Some("Новость не найдена".to_string()),
+                })
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Ошибка при удалении новости: {}", e);
+            HttpResponse::InternalServerError().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Ошибка при удалении новости".to_string()),
+            })
+        }
+    }
+}
+
+// Обновление новости
+pub async fn update_news(
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    news_data: web::Json<UpdateNewsRequest>,
+) -> HttpResponse {
+    let news_id = path.into_inner();
+    println!("✏️ Обновление новости с ID: {}", news_id);
+
+    match sqlx::query(
+        "UPDATE news SET title = COALESCE($1, title), 
+                         content = COALESCE($2, content), 
+                         image_url = $3,
+                         updated_at = NOW()
+         WHERE id = $4
+         RETURNING id, title, content, image_url, author_id, created_at, updated_at"
+    )
+    .bind(&news_data.title)
+    .bind(&news_data.content)
+    .bind(&news_data.image_url)
+    .bind(news_id)
+    .fetch_optional(pool.get_ref())
+    .await {
+        Ok(Some(row)) => {
+            let news = News {
+                id: row.get("id"),
+                title: row.get("title"),
+                content: row.get("content"),
+                image_url: row.get("image_url"),
+                author_id: row.get("author_id"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+            };
+
+            println!("✅ Новость успешно обновлена");
+            HttpResponse::Ok().json(ApiResponse {
+                success: true,
+                data: Some(news),
+                message: Some("Новость успешно обновлена".to_string()),
+            })
+        }
+        Ok(None) => {
+            println!("❌ Новость не найдена");
+            HttpResponse::NotFound().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Новость не найдена".to_string()),
+            })
+        }
+        Err(e) => {
+            eprintln!("❌ Ошибка при обновлении новости: {}", e);
+            HttpResponse::InternalServerError().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Ошибка при обновлении новости".to_string()),
+            })
+        }
+    }
+}
+
+// Маршруты для игр (админка)
+pub async fn create_game(
+    pool: web::Data<PgPool>,
+    game_data: web::Json<CreateGameRequest>,
+) -> HttpResponse {
+    println!("🎮 Создание новой игры...");
+
+    match sqlx::query(
+        "INSERT INTO games (title, short_description, full_description, image_url, screenshots, genre, platform, steam_url, release_date, developer, publisher) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
+         RETURNING id, title, short_description, full_description, image_url, screenshots, genre, platform, steam_url, release_date, developer, publisher, created_at"
+    )
+    .bind(&game_data.title)
+    .bind(&game_data.short_description)
+    .bind(&game_data.full_description)
+    .bind(&game_data.image_url)
+    .bind(&game_data.screenshots)
+    .bind(&game_data.genre)
+    .bind(&game_data.platform)
+    .bind(&game_data.steam_url)
+    .bind(&game_data.release_date)
+    .bind(&game_data.developer)
+    .bind(&game_data.publisher)
+    .fetch_one(pool.get_ref())
+    .await {
+        Ok(row) => {
+            let screenshots: Vec<String> = row.get("screenshots");
+            
+            let game = Game {
+                id: row.get("id"),
+                title: row.get("title"),
+                short_description: row.get("short_description"),
+                full_description: row.get("full_description"),
+                image_url: row.get("image_url"),
+                screenshots: screenshots,
+                genre: row.get("genre"),
+                platform: row.get("platform"),
+                steam_url: row.get("steam_url"),
+                release_date: row.get("release_date"),
+                developer: row.get("developer"),
+                publisher: row.get("publisher"),
+                created_at: row.get("created_at"),
+            };
+
+            println!("✅ Игра успешно создана");
+            HttpResponse::Ok().json(ApiResponse {
+                success: true,
+                data: Some(game),
+                message: Some("Игра успешно создана".to_string()),
+            })
+        }
+        Err(e) => {
+            eprintln!("❌ Ошибка при создании игры: {}", e);
+            HttpResponse::InternalServerError().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Ошибка при создании игры".to_string()),
+            })
+        }
+    }
+}
+
+pub async fn update_game(
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    game_data: web::Json<UpdateGameRequest>,
+) -> HttpResponse {
+    let game_id = path.into_inner();
+    println!("✏️ Обновление игры с ID: {}", game_id);
+
+    match sqlx::query(
+        "UPDATE games SET 
+            title = COALESCE($1, title),
+            short_description = COALESCE($2, short_description),
+            full_description = COALESCE($3, full_description),
+            image_url = COALESCE($4, image_url),
+            screenshots = COALESCE($5, screenshots),
+            genre = COALESCE($6, genre),
+            platform = COALESCE($7, platform),
+            steam_url = COALESCE($8, steam_url),
+            release_date = COALESCE($9, release_date),
+            developer = COALESCE($10, developer),
+            publisher = COALESCE($11, publisher)
+         WHERE id = $12
+         RETURNING *"
+    )
+    .bind(&game_data.title)
+    .bind(&game_data.short_description)
+    .bind(&game_data.full_description)
+    .bind(&game_data.image_url)
+    .bind(&game_data.screenshots)
+    .bind(&game_data.genre)
+    .bind(&game_data.platform)
+    .bind(&game_data.steam_url)
+    .bind(&game_data.release_date)
+    .bind(&game_data.developer)
+    .bind(&game_data.publisher)
+    .bind(game_id)
+    .fetch_optional(pool.get_ref())
+    .await {
+        Ok(Some(row)) => {
+            let screenshots: Vec<String> = row.get("screenshots");
+            
+            let game = Game {
+                id: row.get("id"),
+                title: row.get("title"),
+                short_description: row.get("short_description"),
+                full_description: row.get("full_description"),
+                image_url: row.get("image_url"),
+                screenshots: screenshots,
+                genre: row.get("genre"),
+                platform: row.get("platform"),
+                steam_url: row.get("steam_url"),
+                release_date: row.get("release_date"),
+                developer: row.get("developer"),
+                publisher: row.get("publisher"),
+                created_at: row.get("created_at"),
+            };
+
+            println!("✅ Игра успешно обновлена");
+            HttpResponse::Ok().json(ApiResponse {
+                success: true,
+                data: Some(game),
+                message: Some("Игра успешно обновлена".to_string()),
+            })
+        }
+        Ok(None) => {
+            println!("❌ Игра не найдена");
+            HttpResponse::NotFound().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Игра не найдена".to_string()),
+            })
+        }
+        Err(e) => {
+            eprintln!("❌ Ошибка при обновлении игры: {}", e);
+            HttpResponse::InternalServerError().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Ошибка при обновлении игры".to_string()),
+            })
+        }
+    }
+}
+
+pub async fn delete_game(
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> HttpResponse {
+    let game_id = path.into_inner();
+    println!("🗑️ Удаление игры с ID: {}", game_id);
+
+    match sqlx::query("DELETE FROM games WHERE id = $1")
+        .bind(game_id)
+        .execute(pool.get_ref())
+        .await {
+        Ok(result) => {
+            if result.rows_affected() > 0 {
+                println!("✅ Игра успешно удалена");
+                HttpResponse::Ok().json(ApiResponse::<()> {
+                    success: true,
+                    data: None,
+                    message: Some("Игра успешно удалена".to_string()),
+                })
+            } else {
+                println!("❌ Игра не найдена");
+                HttpResponse::NotFound().json(ApiResponse::<()> {
+                    success: false,
+                    data: None,
+                    message: Some("Игра не найдена".to_string()),
+                })
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Ошибка при удалении игры: {}", e);
+            HttpResponse::InternalServerError().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                message: Some("Ошибка при удалении игры".to_string()),
+            })
+        }
+    }
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
@@ -1023,4 +1350,34 @@ pub struct UpdateUserRequest {
     pub email: Option<String>,
     pub password: Option<String>, // ДОБАВЬТЕ это поле
     pub role: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CreateGameRequest {
+    pub title: String,
+    pub short_description: String,
+    pub full_description: String,
+    pub image_url: String,
+    pub screenshots: Vec<String>,
+    pub genre: String,
+    pub platform: String,
+    pub steam_url: Option<String>,
+    pub release_date: Option<String>,
+    pub developer: String,
+    pub publisher: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateGameRequest {
+    pub title: Option<String>,
+    pub short_description: Option<String>,
+    pub full_description: Option<String>,
+    pub image_url: Option<String>,
+    pub screenshots: Option<Vec<String>>,
+    pub genre: Option<String>,
+    pub platform: Option<String>,
+    pub steam_url: Option<String>,
+    pub release_date: Option<String>,
+    pub developer: Option<String>,
+    pub publisher: Option<String>,
 }

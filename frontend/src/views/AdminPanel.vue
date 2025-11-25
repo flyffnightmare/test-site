@@ -783,41 +783,68 @@ export default {
     },
     
     async saveNews() {
-    try {
-      const token = localStorage.getItem('auth_token')
-      
-      if (this.editingNews) {
-        // Обновление новости - нужно добавить маршрут в бэкенде
-        alert('Редактирование новостей требует настройки бэкенда')
-      } else {
-        // Создание новости
-        const response = await axios.post(
-          '/api/news',
-          this.newsForm,
-          { headers: { Authorization: `Bearer ${token}` } }
-        )
+      try {
+        const token = localStorage.getItem('auth_token')
+        
+        if (this.editingNews) {
+          const response = await axios.put(
+            `/api/admin/news/${this.editingNews.id}`,
+            this.newsForm,
+            { headers: { Authorization: `Bearer ${token}` } }
+          )
 
-        if (response.data.success) {
-          this.showNewsModal = false
-          this.resetForms()
-          await this.loadData()
-          alert('Новость успешно создана')
+          if (response.data.success) {
+            this.showNewsModal = false
+            this.resetForms()
+            await this.loadData()
+            alert('Новость успешно обновлена')
+          }
+        } else {
+          const response = await axios.post(
+            '/api/news', // Создание через публичный маршрут
+            this.newsForm,
+            { headers: { Authorization: `Bearer ${token}` } }
+          )
+
+          if (response.data.success) {
+            this.showNewsModal = false
+            this.resetForms()
+            await this.loadData()
+            alert('Новость успешно создана')
+          }
         }
+      } catch (error) {
+        console.error('❌ Ошибка сохранения новости:', error)
+        alert('Ошибка при сохранении новости: ' + (error.response?.data?.message || error.message))
       }
-    } catch (error) {
-      console.error('❌ Ошибка сохранения новости:', error)
-      alert('Ошибка при сохранении новости: ' + (error.response?.data?.message || error.message))
-    }
-  },
+    },
+
+      async loadNews() {
+      try {
+        const token = localStorage.getItem('auth_token')
+        const response = await axios.get('/api/admin/news', {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (response.data.success) this.news = response.data.data
+      } catch (error) {
+        console.error('❌ Ошибка загрузки новостей:', error)
+        this.news = []
+      }
+    },
     
     async deleteNews(newsId) {
       if (!confirm('Вы уверены, что хотите удалить эту новость?')) return
 
       try {
         const token = localStorage.getItem('auth_token')
-        // Удаление новости - нужно добавить маршрут в бэкенде
-        alert('Удаление новостей требует настройки бэкенда')
-        
+        const response = await axios.delete(`/api/admin/news/${newsId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+
+        if (response.data.success) {
+          await this.loadData()
+          alert('Новость успешно удалена')
+        }
       } catch (error) {
         console.error('❌ Ошибка удаления новости:', error)
         alert('Ошибка при удалении новости: ' + (error.response?.data?.message || error.message))
